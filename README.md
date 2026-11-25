@@ -684,6 +684,54 @@ end
 
 refreshCharacter()
 
+-- Camera superior durante a mineracao; camera normal durante a venda.
+local MiningCameraConnection = nil
+local SavedCameraType, SavedCameraSubject = nil, nil
+local SavedMinZoom, SavedMaxZoom = nil, nil
+
+local function pararCameraMineracao(restaurar)
+    if MiningCameraConnection then
+        MiningCameraConnection:Disconnect()
+        MiningCameraConnection = nil
+    end
+    local camera = Workspace.CurrentCamera
+    if restaurar and camera then
+        camera.CameraType = SavedCameraType or Enum.CameraType.Custom
+        camera.CameraSubject = SavedCameraSubject or Humanoid
+        if SavedMinZoom then Player.CameraMinZoomDistance = SavedMinZoom end
+        if SavedMaxZoom then Player.CameraMaxZoomDistance = SavedMaxZoom end
+    end
+end
+
+local function iniciarCameraSuperior()
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    if not SavedCameraType then
+        SavedCameraType = camera.CameraType
+        SavedCameraSubject = camera.CameraSubject
+        SavedMinZoom = Player.CameraMinZoomDistance
+        SavedMaxZoom = Player.CameraMaxZoomDistance
+    end
+    pararCameraMineracao(false)
+    camera.CameraType = Enum.CameraType.Scriptable
+    MiningCameraConnection = RunService.RenderStepped:Connect(function()
+        local root = Root
+        if State.Running and State.Mining and root and root.Parent then
+            local foco = root.Position + Vector3.new(0, 1.5, 0)
+            camera.CFrame = CFrame.lookAt(root.Position + Vector3.new(0, 15, 0), foco)
+            camera.Focus = CFrame.new(foco)
+        end
+    end)
+end
+
+local function voltarCameraSuperior()
+    if State.Running and State.Mining then
+        iniciarCameraSuperior()
+    else
+        pararCameraMineracao(true)
+    end
+end
+
 local stopFlight
 Player.CharacterAdded:Connect(function()
     if stopFlight then stopFlight() end
@@ -1128,13 +1176,13 @@ local CONFIG = {
 	TextoPromptAlvo = "vender minérios",
 	TituloMenuAlvo = "companhia de mineração",
 	CoordenadasPC = {
-		{ x = 462, y = 500 }, -- Vender 500
-		{ x = 566, y = 504 }, -- Vender 750
-		{ x = 682, y = 502 }, -- Vender 1K
-		{ x = 790, y = 506 }, -- Vender 6K
-		{ x = 886, y = 506 }, -- Vender 25K
+		{ x = 314, y = 278 }, -- Vender 500
+		{ x = 386, y = 280 }, -- Vender 750
+		{ x = 459, y = 277 }, -- Vender 1K
+		{ x = 524, y = 278 }, -- Vender 6K
+		{ x = 590, y = 277 }, -- Vender 25K
 	},
-	CoordenadaFecharPC = { x = 952, y = 256 },
+	CoordenadaFecharPC = { x = 639, y = 143 },
 	IntervaloCliqueVender = 1.0, -- intervalo entre cliques em "Vender"
 	TempoExtraSegurar = 0.55, -- +0.5s (metade de 1s) extra segurando para abrir a venda
 	TempoMaximoSegurando = 2.2,
@@ -1537,9 +1585,17 @@ local function clicarCoordenada(x, y)
 end
 
 local function executarVendaERetorno()
+    -- Deixa a camera normal antes de procurar/entrar no carro e durante toda a venda.
+    pararCameraMineracao(true)
+    local function restaurarCamera()
+        task.wait(0.1)
+        voltarCameraSuperior()
+    end
+
 	local character, hrp = obterPersonagem()
 	if not character or not hrp then
 		warn("Personagem ou HumanoidRootPart não encontrado.")
+        restaurarCamera()
 		return
 	end
 
@@ -1550,11 +1606,13 @@ local function executarVendaERetorno()
 	local carro, assento = encontrarMeuCarroPerto()
 	if not carro or not assento then
 		warn("Seu carro não foi encontrado no raio de " .. CONFIG.RaioDetectarCarro .. " studs.")
+        restaurarCamera()
 		return
 	end
 
 	if not entrarNoCarro(carro, assento) then
 		warn("Não foi possível sentar no seu carro.")
+        restaurarCamera()
 		return
 	end
 
@@ -1573,6 +1631,7 @@ local function executarVendaERetorno()
 		task.wait(CONFIG.EsperaCarregarMapa)
 		sairDoCarro()
 		task.wait(0.1)
+        restaurarCamera()
 		return
 	end
 
@@ -1606,6 +1665,7 @@ local function executarVendaERetorno()
 	task.wait(CONFIG.EsperaCarregarMapa)
 	sairDoCarro()
 	task.wait(0.1)
+    restaurarCamera()
 end
 
 local function miningLoop()
@@ -1778,9 +1838,11 @@ MinerStart.MouseButton1Click:Connect(function()
             return
         end
         State.Status = "Picareta na mao; iniciando mineracao"
+        iniciarCameraSuperior()
         task.spawn(miningLoop)
     else
         stopFlight()
+        pararCameraMineracao(true)
         State.Status = "Mineracao desligada"
     end
     atualizarMineradorUI()
