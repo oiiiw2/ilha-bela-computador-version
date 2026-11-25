@@ -1,7 +1,7 @@
 --[[
-    PRIME X - SCRIPT HUB
-    AUTO CAIXA + AUTO VARRER + EMPILHADOR + MINERADOR
-    Um unico painel com secoes expansíveis.
+    PRIME X - SCRIPT HUB MOBILE
+    AUTO CAIXA + EMPILHADOR + MINERADOR
+    Interface adaptada para toque/celular.
 ]]
 
 local Players = game:GetService("Players")
@@ -14,11 +14,6 @@ local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
 
 local Player = Players.LocalPlayer
--- Bloqueia a inicializacao em dispositivos somente touch: este arquivo e exclusivo para PC.
-if UIS.TouchEnabled and not UIS.KeyboardEnabled then
-    warn("[PRIME X] Esta versao funciona somente em PC.")
-    return
-end
 local PlayerGui = Player:WaitForChild("PlayerGui")
 -- Anti-AFK global: protege todas as rotinas enquanto o hub estiver carregado.
 pcall(function()
@@ -64,7 +59,6 @@ end
 
 local Hub = {
     CaixaAtivo = false,
-    VarrerAtivo = false,
     CaixaVelocidade = 24,
     Velocidade = 24,
     Movimento = nil
@@ -113,7 +107,10 @@ Frame.Parent = Gui
 Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
 
 local PanelScale = Instance.new("UIScale")
-PanelScale.Scale = 1
+local camera = workspace.CurrentCamera
+local viewport = camera and camera.ViewportSize or Vector2.new(650, 430)
+local escalaInicial = math.clamp(math.min(viewport.X / 680, viewport.Y / 460), 0.45, 1) * 100
+PanelScale.Scale = escalaInicial / 100
 PanelScale.Parent = Frame
 
 local Stroke = Instance.new("UIStroke")
@@ -137,7 +134,7 @@ local Header = Instance.new("TextLabel")
 Header.Size = UDim2.new(1, -130, 0, 42)
 Header.Position = UDim2.fromOffset(15, 2)
 Header.BackgroundTransparency = 1
-Header.Text = "PRIME X  |  SCRIPT HUB"
+Header.Text = "PRIME X  |  MOBILE"
 Header.TextColor3 = WHITE
 Header.TextSize = 18
 Header.Font = Enum.Font.GothamBlack
@@ -243,8 +240,8 @@ SideTitle.Parent = Sidebar
 
 local Pages = {}
 local PageButtons = {}
-local pageNames = {"AUTO CAIXA", "AUTO VARRER", "EMPILHADOR", "MINERADOR"}
-local pageIcons = {"▣", "✧", "▤", "⛏"}
+local pageNames = {"AUTO CAIXA", "EMPILHADOR", "MINERADOR"}
+local pageIcons = {"▣", "▤", "⛏"}
 local activePage = 1
 
 for i, pageName in ipairs(pageNames) do
@@ -622,12 +619,12 @@ Bubble.MouseButton1Click:Connect(function()
 end)
 
 -- =========================================================
--- AUTO MINERADOR INTEGRADO | versao exclusiva para PC
+-- AUTO MINERADOR INTEGRADO | versao mobile
 -- =========================================================
 --[[
     XLZ HUB | AUTO MINERADOR
-    - Detecta picareta equipada; se faltar, caminha ate ela
-    - Aguarda 1 segundo apos chegar na picareta
+    - Exige que a picareta ja esteja equipada ao iniciar
+    - Depois da venda, pressiona 1 para selecionar o primeiro slot
     - Remove o ponto A e percorre os quatro pontos restantes
     - Voo suave ate os pontos, com estabilizacao ao chegar
     - Aproxima do minerio e aguarda o prompt ficar disponivel
@@ -648,7 +645,7 @@ end
 
 local State = {
     Running = true, Mining = false, Speed = 16,
-    HoldTime = 15, OreCooldown = 20, LastOre = {},
+    HoldTime = 16, OreCooldown = 20, LastOre = {},
     Status = "Aguardando inicio", Flying = false, PointIndex = 1,
     VisiblePrompts = {}
 }
@@ -684,7 +681,6 @@ end
 
 refreshCharacter()
 
--- Camera superior durante a mineracao; camera normal durante a venda.
 local MiningCameraConnection = nil
 local SavedCameraType, SavedCameraSubject = nil, nil
 local SavedMinZoom, SavedMaxZoom = nil, nil
@@ -722,6 +718,25 @@ local function iniciarCameraSuperior()
             camera.Focus = CFrame.new(foco)
         end
     end)
+end
+
+local function enquadrarCameraNoNpc(parteNpc)
+    pararCameraMineracao(false)
+    local camera = Workspace.CurrentCamera
+    local character = Player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not camera or not character or not root or not parteNpc or not parteNpc.Parent then return end
+    camera.CameraType = Enum.CameraType.Scriptable
+    local direcao = root.Position - parteNpc.Position
+    direcao = Vector3.new(direcao.X, 0, direcao.Z)
+    if direcao.Magnitude < 0.1 then direcao = Vector3.new(0, 0, 1) end
+    direcao = direcao.Unit
+    local foco = parteNpc.Position + Vector3.new(0, 2.2, 0)
+    local posCamera = root.Position + direcao * 13 + Vector3.new(0, 6, 0)
+    camera.CFrame = CFrame.lookAt(posCamera, foco)
+    camera.Focus = CFrame.new(foco)
+    Player.CameraMinZoomDistance = 12
+    Player.CameraMaxZoomDistance = 18
 end
 
 local function voltarCameraSuperior()
@@ -840,7 +855,7 @@ local function getHumanoidRoot()
     return Humanoid, Root
 end
 
--- Detecta se uma picareta ja esta equipada no personagem.
+-- Confere se a picareta ja esta na mao antes de iniciar a mineracao.
 local function hasEquippedPickaxe()
     if not Character then return false end
     for _, item in ipairs(Character:GetChildren()) do
@@ -1080,7 +1095,7 @@ local function holdMiningPrompt(prompt)
         prompt:InputHoldBegin()
         began = true
 
-        -- Garante pelo menos 15 segundos reais de retenção.
+        -- Garante pelo menos 16 segundos reais de retenção.
         -- Se o próprio prompt exigir mais tempo, respeita o HoldDuration dele.
         local required = math.max(State.HoldTime, tonumber(prompt.HoldDuration) or 0)
         local started = os.clock()
@@ -1120,12 +1135,12 @@ local function holdMiningPrompt(prompt)
         return false
     end
 
-    -- Não contar como minério coletado se a retenção foi interrompida antes de 15s.
+    -- Não contar como minério coletado se a retenção foi interrompida antes de 16s.
     return began and completedFullHold and State.Running and State.Mining
 end
 
 local function pressionarTecla1ParaEquiparPicareta()
-    -- Apos pegar a picareta, pressiona 1 para selecionar o primeiro slot.
+    -- Depois da venda, pressiona 1 para selecionar o primeiro slot.
     local inputManager = game:GetService("VirtualInputManager")
     local ok, err = pcall(function()
         inputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game)
@@ -1175,14 +1190,14 @@ local CONFIG = {
 	-- Coordenadas de venda ficam somente na configuracao interna; nao aparecem no painel.
 	TextoPromptAlvo = "vender minérios",
 	TituloMenuAlvo = "companhia de mineração",
-	CoordenadasPC = {
-		{ x = 314, y = 278 }, -- Vender 500
-		{ x = 386, y = 280 }, -- Vender 750
-		{ x = 459, y = 277 }, -- Vender 1K
-		{ x = 524, y = 278 }, -- Vender 6K
-		{ x = 590, y = 277 }, -- Vender 25K
+	CoordenadasCelular = {
+		{ x = 314, y = 278 }, -- 1o Vender (500)
+		{ x = 386, y = 280 }, -- 2o Vender (750)
+		{ x = 459, y = 277 }, -- 3o Vender (1K)
+		{ x = 524, y = 278 }, -- 4o Vender (6K)
+		{ x = 590, y = 277 }, -- 5o Vender (25K)
 	},
-	CoordenadaFecharPC = { x = 639, y = 143 },
+	CoordenadaFecharX = { x = 639, y = 143 },
 	IntervaloCliqueVender = 1.0, -- intervalo entre cliques em "Vender"
 	TempoExtraSegurar = 0.55, -- +0.5s (metade de 1s) extra segurando para abrir a venda
 	TempoMaximoSegurando = 2.2,
@@ -1453,149 +1468,82 @@ local function voarDevagarAteNpc(parteNpc)
 	return true
 end
 
-local function guiEstaVisivelNaTela(guiObj)
-	if not guiObj or not guiObj.Parent then
-		return false
-	end
-
-	local atual = guiObj
-	while atual and atual ~= game do
-		if atual:IsA("ScreenGui") then
-			return atual.Enabled
-		elseif atual:IsA("GuiObject") and not atual.Visible then
-			return false
-		end
-		atual = atual.Parent
-	end
-
-	return true
-end
-
-local function menuVendaEstaAberto()
-	local playerGui = player:FindFirstChild("PlayerGui")
-	if not playerGui then
-		return false
-	end
-
-	for _, gui in ipairs(playerGui:GetDescendants()) do
-		if guiEstaVisivelNaTela(gui) and (gui:IsA("TextLabel") or gui:IsA("TextButton")) then
-			local txt = string.lower(gui.Text or "")
-			if string.find(txt, CONFIG.TituloMenuAlvo, 1, true) or txt == "vender" then
-				return true
-			end
-		end
-	end
-
-	return false
-end
-
 local function segurarAteAbrirMenuVenda(prompt, parteNpc)
-	local inicio = os.clock()
-	local holdDuracao = (prompt and prompt.HoldDuration and prompt.HoldDuration > 0) and prompt.HoldDuration or 0.6
-	local tempoMinimoHold = holdDuracao + CONFIG.TempoExtraSegurar
+    local _, hrp = obterPersonagem()
+    if hrp and parteNpc and parteNpc.Parent then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.CFrame = CFrame.lookAt(
+            hrp.Position,
+            Vector3.new(parteNpc.Position.X, hrp.Position.Y, parteNpc.Position.Z)
+        )
+    end
 
-	local teclaAlvo = (prompt and prompt.KeyboardKeyCode and prompt.KeyboardKeyCode ~= Enum.KeyCode.Unknown)
-		and prompt.KeyboardKeyCode or Enum.KeyCode.E
+    -- Aguarda o personagem estabilizar diante do vendedor.
+    task.wait(0.5)
 
-	local cam = workspace.CurrentCamera
-	local posTela = cam and Vector2.new(cam.ViewportSize.X * 0.5, cam.ViewportSize.Y * 0.5) or Vector2.new(500, 300)
+    if not prompt or not prompt.Parent or not prompt.Enabled then
+        warn("[PRIME X MOBILE] Prompt do vendedor indisponivel.")
+        return false
+    end
 
-	local function pressionarContinuo()
-		local _, hrp = obterPersonagem()
-		if hrp and parteNpc and parteNpc.Parent then
-			hrp.CFrame = CFrame.lookAt(hrp.Position, parteNpc.Position)
-		end
+    local holdDuracao = math.max(tonumber(prompt.HoldDuration) or 0, 0.6)
+    local tempoSegurar = holdDuracao + 0.7
 
-		if prompt and prompt.Parent and prompt.Enabled then
-			pcall(function()
-				prompt:InputHoldBegin()
-			end)
-		end
+    -- Uma interação direta, sem procurar textos, nomes ou elementos do menu.
+    local iniciou = false
+    local ok = pcall(function()
+        prompt:InputHoldBegin()
+        iniciou = true
+    end)
 
-		pcall(function()
-			VirtualInputManager:SendKeyEvent(true, teclaAlvo, false, game)
-		end)
+    if iniciou then
+        task.wait(tempoSegurar)
+        pcall(function()
+            prompt:InputHoldEnd()
+        end)
+        task.wait(1.0)
+        return true
+    end
 
-		pcall(function()
-			VirtualInputManager:SendMouseButtonEvent(posTela.X, posTela.Y, 0, true, game, 0)
-		end)
-	end
+    -- Alternativa caso o InputHoldBegin não esteja disponível no executor.
+    if typeof(fireproximityprompt) == "function" then
+        local disparou = pcall(function()
+            fireproximityprompt(prompt, holdDuracao)
+        end)
+        if disparou then
+            task.wait(1.0)
+            return true
+        end
+    end
 
-	local function soltarTudo()
-		pcall(function()
-			VirtualInputManager:SendMouseButtonEvent(posTela.X, posTela.Y, 0, false, game, 0)
-		end)
-		pcall(function()
-			VirtualInputManager:SendKeyEvent(false, teclaAlvo, false, game)
-		end)
-		if prompt and prompt.Parent then
-			pcall(function()
-				prompt:InputHoldEnd()
-			end)
-		end
-	end
-
-	local abriu = false
-
-	while (os.clock() - inicio) < CONFIG.TempoMaximoSegurando do
-		pressionarContinuo()
-
-		if (os.clock() - inicio) >= tempoMinimoHold and menuVendaEstaAberto() then
-			abriu = true
-			break
-		end
-
-		task.wait(0.06)
-	end
-
-	soltarTudo()
-
-	if not abriu then
-		local esperaExtra = os.clock()
-		while (os.clock() - esperaExtra) < CONFIG.TempoEsperaMenu do
-			if menuVendaEstaAberto() then
-				abriu = true
-				break
-			end
-			task.wait(0.06)
-		end
-	end
-
-	return abriu
+    warn("[PRIME X MOBILE] Nao foi possivel interagir com o prompt do vendedor.")
+    return false
 end
 
--- Clique exclusivo para PC; nao ha entrada/touch mobile nesta versao.
+-- Toque/clique nas coordenadas da tela mobile.
 local function clicarCoordenada(x, y)
-    local okMove = pcall(function()
-        VirtualInputManager:SendMouseMoveEvent(x, y, game)
-    end)
-    task.wait(0.03)
     local okDown = pcall(function()
         VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
     end)
-    task.wait(0.06)
+    task.wait(0.08)
     local okUp = pcall(function()
         VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
     end)
-    if not okMove or not okDown or not okUp then
-        warn("[PRIME X] Falha no clique do computador.")
+    if not okDown or not okUp then
+        warn("[PRIME X MOBILE] Nao foi possivel tocar na coordenada.")
         return false
     end
     return true
 end
 
 local function executarVendaERetorno()
-    -- Deixa a camera normal antes de procurar/entrar no carro e durante toda a venda.
+    -- Suspende a camera superior durante todo o trajeto e a venda.
     pararCameraMineracao(true)
-    local function restaurarCamera()
-        task.wait(0.1)
-        voltarCameraSuperior()
-    end
-
 	local character, hrp = obterPersonagem()
 	if not character or not hrp then
 		warn("Personagem ou HumanoidRootPart não encontrado.")
-        restaurarCamera()
+        voltarCameraSuperior()
 		return
 	end
 
@@ -1606,13 +1554,13 @@ local function executarVendaERetorno()
 	local carro, assento = encontrarMeuCarroPerto()
 	if not carro or not assento then
 		warn("Seu carro não foi encontrado no raio de " .. CONFIG.RaioDetectarCarro .. " studs.")
-        restaurarCamera()
+        voltarCameraSuperior()
 		return
 	end
 
 	if not entrarNoCarro(carro, assento) then
 		warn("Não foi possível sentar no seu carro.")
-        restaurarCamera()
+        voltarCameraSuperior()
 		return
 	end
 
@@ -1631,33 +1579,35 @@ local function executarVendaERetorno()
 		task.wait(CONFIG.EsperaCarregarMapa)
 		sairDoCarro()
 		task.wait(0.1)
-        restaurarCamera()
+        voltarCameraSuperior()
 		return
 	end
 
 	voarDevagarAteNpc(parteNpc)
 	task.wait(0.05)
 
-	segurarAteAbrirMenuVenda(prompt, parteNpc)
-	task.wait(0.08)
+	local menuIniciado = segurarAteAbrirMenuVenda(prompt, parteNpc)
+    if menuIniciado then
+        -- Pequena folga para o painel de venda terminar de abrir no mobile.
+        task.wait(0.5)
 
-	local coordenadasVenda = CONFIG.CoordenadasPC
-	local coordenadaFechar = CONFIG.CoordenadaFecharPC
-    -- Cada botao recebe somente um clique por visita ao vendedor.
-    for i = 1, #coordenadasVenda do
-        local coord = coordenadasVenda[i]
-        local clicou = clicarCoordenada(coord.x, coord.y)
-        print("Venda " .. i .. " (" .. coord.x .. ", " .. coord.y .. ") | sucesso=" .. tostring(clicou))
-        if i < #coordenadasVenda then
+        local coordenadasVenda = CONFIG.CoordenadasCelular
+        local coordenadaFechar = CONFIG.CoordenadaFecharX
+
+        -- Mantem os cinco toques originais, com intervalo entre eles.
+        for i = 1, #coordenadasVenda do
+            local coord = coordenadasVenda[i]
+            clicarCoordenada(coord.x, coord.y)
             task.wait(CONFIG.IntervaloCliqueVender)
         end
-    end
 
-	if coordenadaFechar then
-		print("Clicando no X (" .. coordenadaFechar.x .. ", " .. coordenadaFechar.y .. ")")
-		clicarCoordenada(coordenadaFechar.x, coordenadaFechar.y)
-		task.wait(0.08)
-	end
+        if coordenadaFechar then
+            clicarCoordenada(coordenadaFechar.x, coordenadaFechar.y)
+            task.wait(0.3)
+        end
+    else
+        warn("[PRIME X MOBILE] Venda ignorada porque a interacao com o vendedor falhou.")
+    end
 
 	entrarNoCarro(carro, assento)
 	task.wait(0.05)
@@ -1665,12 +1615,13 @@ local function executarVendaERetorno()
 	task.wait(CONFIG.EsperaCarregarMapa)
 	sairDoCarro()
 	task.wait(0.1)
-    restaurarCamera()
+    voltarCameraSuperior()
 end
 
 local function miningLoop()
-    -- Ao ativar, começa a minerar sem ir buscar a picareta.
-    -- A picareta só será buscada depois da primeira venda de 9 minérios.
+    iniciarCameraSuperior()
+    -- Ao ativar, exige que a picareta ja esteja na mao.
+    -- Depois de cada venda, pressiona 1; nao procura nem pega ferramenta.
     while State.Running and State.Mining do
         for index, pointCFrame in ipairs(Points) do
             if not State.Running or not State.Mining then break end
@@ -1755,7 +1706,7 @@ local function miningLoop()
 
             if ready and State.Running and State.Mining then
                 holdPosition(pointCFrame.Rotation)
-                State.Status = "Botao E apareceu; segurando por pelo menos 15 segundos"
+                State.Status = "Botao E apareceu; segurando por 16 segundos"
                 local ok = holdMiningPrompt(prompt)
                 if ok then
                     local stones = MineFolder and MineFolder:FindFirstChild("Pedras")
@@ -1781,7 +1732,7 @@ local function miningLoop()
                         end
                     end
                 else
-                    State.Status = "Retencao interrompida antes de completar 15 segundos; minerio nao contado"
+                    State.Status = "Retencao interrompida antes de completar 16 segundos; minerio nao contado"
                     task.wait(0.5)
                 end
             else
@@ -1793,13 +1744,16 @@ local function miningLoop()
         end
     end
     stopFlight()
+    pararCameraMineracao(true)
+    SavedCameraType, SavedCameraSubject = nil, nil
+    SavedMinZoom, SavedMaxZoom = nil, nil
     State.Status = "Mineracao desligada"
 end
 
 
 
--- Interface do minerador: versao exclusiva para PC.
-local MinerBody = CriarSecao("AUTO MINERADOR", 4, 42, 215)
+-- Interface do minerador: versao mobile.
+local MinerBody = CriarSecao("AUTO MINERADOR", 3, 42, 215)
 local MinerStatus = makeLabel(MinerBody, "Status: Aguardando inicio", 2, 34, 11)
 local MinerSpeedLabel = makeLabel(MinerBody, "VELOCIDADE DE ANDADA: " .. State.Speed, 37, 22, 11)
 local SpeedBox = Instance.new("TextBox")
@@ -1838,11 +1792,12 @@ MinerStart.MouseButton1Click:Connect(function()
             return
         end
         State.Status = "Picareta na mao; iniciando mineracao"
-        iniciarCameraSuperior()
         task.spawn(miningLoop)
     else
         stopFlight()
         pararCameraMineracao(true)
+        SavedCameraType, SavedCameraSubject = nil, nil
+        SavedMinZoom, SavedMaxZoom = nil, nil
         State.Status = "Mineracao desligada"
     end
     atualizarMineradorUI()
@@ -2014,191 +1969,9 @@ CaixaStart.MouseButton1Click:Connect(function()
 end)
 
 -- =========================================================
--- AUTO VARRER
--- =========================================================
-local VarrerBody = CriarSecao("AUTO VARRER", 2, 42, 250)
-local VarrerStatus = makeLabel(VarrerBody, "Status: DESATIVADO", 2, 22, 12)
-local VarrerDestino = makeLabel(VarrerBody, "Destino: Nenhum", 25, 22, 11)
-local VelLabel = makeLabel(VarrerBody, "Velocidade: 24  |  Limite: 8-100", 49, 22, 11)
-local Menos = makeButton(VarrerBody, "− VELOCIDADE", 12, 77, 0.47, 34, Color3.fromRGB(72,48,103))
-local Mais = makeButton(VarrerBody, "+ VELOCIDADE", 0, 77, 0.47, 34, Color3.fromRGB(105,62,160))
-Mais.AnchorPoint = Vector2.new(1, 0)
-Mais.Position = UDim2.new(1, -12, 0, 77)
-local VarrerStart = makeButton(VarrerBody, "▶ ATIVAR AUTO VARRER", 12, 120, 0.96, 36, OFF)
-
-local Pasta = Workspace:FindFirstChild("LocaisVarrer")
-local Remote = ReplicatedStorage:FindFirstChild("RemoteVarrer")
-local function AtualizarReferenciasVarrer()
-    if not Pasta or not Pasta.Parent then Pasta = Workspace:FindFirstChild("LocaisVarrer") end
-    if not Remote or not Remote.Parent then Remote = ReplicatedStorage:FindFirstChild("RemoteVarrer") end
-    return Pasta ~= nil and Remote ~= nil
-end
-local DistanciaChegada, TempoVarredura, EsperaAposVarrer, TempoAntiRepeticao = 5, 5, 1, 15
-local ultimaVisita = {}
-local function StatusVarrer(t) VarrerStatus.Text = "Status: " .. t end
-local function ChaveLocal(pos)
-    return string.format("%d:%d:%d", math.floor(pos.X/2+0.5), math.floor(pos.Y/2+0.5), math.floor(pos.Z/2+0.5))
-end
-local function ObterLocais()
-    local locais, vistos = {}, {}
-    if not AtualizarReferenciasVarrer() then return locais end
-    for _, obj in ipairs(Pasta:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local chave = ChaveLocal(obj.Position)
-            if not vistos[chave] then
-                vistos[chave] = true
-                table.insert(locais, {part=obj, pos=obj.Position, chave=chave, nome=obj.Name})
-            end
-        end
-    end
-    return locais
-end
-local function EscolherLocal()
-    local locais = ObterLocais()
-    if #locais == 0 then return nil, "NENHUM LOCAL ENCONTRADO" end
-    local disponiveis, agora = {}, os.clock()
-    for _, info in ipairs(locais) do
-        if agora - (ultimaVisita[info.chave] or -math.huge) >= TempoAntiRepeticao then
-            table.insert(disponiveis, info)
-        end
-    end
-    if #disponiveis == 0 then return nil, "AGUARDANDO ANTI-REPETICAO" end
-    return disponiveis[math.random(1, #disponiveis)]
-end
-local function MoverVarrer(posicao)
-    for tentativa = 1, 3 do
-        if not Hub.VarrerAtivo then return false end
-        local root, humanoid = Personagem()
-        if not root or not humanoid then return false end
-        humanoid.WalkSpeed = math.clamp(tonumber(Hub.Velocidade) or 24, 8, 100)
-        local path = PathfindingService:CreatePath({AgentRadius=2, AgentHeight=5, AgentCanJump=true, WaypointSpacing=7})
-        local calculou = pcall(function() path:ComputeAsync(root.Position, posicao) end)
-        if not calculou or path.Status ~= Enum.PathStatus.Success then
-            StatusVarrer("RECALCULANDO ROTA • " .. tentativa .. "/3")
-            task.wait(0.2)
-            continue
-        end
-        local rotaOK = true
-        for _, waypoint in ipairs(path:GetWaypoints()) do
-            if not Hub.VarrerAtivo then return false end
-            root, humanoid = Personagem()
-            if not root or not humanoid then return false end
-            humanoid.WalkSpeed = math.clamp(tonumber(Hub.Velocidade) or 24, 8, 100)
-            if waypoint.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-            humanoid:MoveTo(waypoint.Position)
-            local inicio, ultimaPosicao, ultimoProgresso = os.clock(), root.Position, os.clock()
-            local chegou = false
-            while Hub.VarrerAtivo do
-                root, humanoid = Personagem()
-                if not root or not humanoid then return false end
-                humanoid.WalkSpeed = math.clamp(tonumber(Hub.Velocidade) or 24, 8, 100)
-                local distanciaPonto = (root.Position - waypoint.Position).Magnitude
-                local distanciaFinal = (root.Position - posicao).Magnitude
-                VarrerDestino.Text = "Destino: " .. math.floor(distanciaFinal) .. " studs"
-                if distanciaPonto <= 3 or distanciaFinal <= DistanciaChegada then chegou = true; break end
-                local delta = root.Position - ultimaPosicao
-                if Vector3.new(delta.X, 0, delta.Z).Magnitude >= 0.45 then
-                    ultimaPosicao = root.Position
-                    ultimoProgresso = os.clock()
-                end
-                if os.clock() - ultimoProgresso >= 2 then
-                    StatusVarrer("PRESO • TENTANDO DESTRAVAR")
-                    humanoid.Jump = true
-                    task.wait(0.25)
-                    rotaOK = false
-                    break
-                end
-                if os.clock() - inicio >= 14 then rotaOK = false; break end
-                task.wait(0.06)
-            end
-            if not Hub.VarrerAtivo then return false end
-            if not rotaOK or not chegou then rotaOK = false; break end
-        end
-        if rotaOK then
-            root = Personagem()
-            if root and (root.Position - posicao).Magnitude <= DistanciaChegada then return true end
-        end
-        if tentativa < 3 and Hub.VarrerAtivo then
-            StatusVarrer("NOVA TENTATIVA DE ROTA • " .. tentativa .. "/3")
-            task.wait(0.25)
-        end
-    end
-    StatusVarrer("NAO FOI POSSIVEL ALCANCAR O LOCAL")
-    return false
-end
-local function VarrerLocal(info)
-    if not Hub.VarrerAtivo then return false end
-    local root = Personagem()
-    if not root or (root.Position - info.pos).Magnitude > DistanciaChegada then
-        StatusVarrer("AINDA NAO CHEGOU AO LOCAL")
-        return false
-    end
-    if not info.part or not info.part.Parent then StatusVarrer("LOCAL INDISPONIVEL"); return false end
-    StatusVarrer("VARRANDO LOCAL")
-    VarrerDestino.Text = "Destino: " .. info.nome
-    ultimaVisita[info.chave] = os.clock()
-    if not AtualizarReferenciasVarrer() then StatusVarrer("LOCAIS/REMOTE NAO ENCONTRADOS"); return false end
-    local enviado = pcall(function() Remote:FireServer(info.part) end)
-    if not enviado then StatusVarrer("FALHA AO INICIAR VARREDURA"); return false end
-    for i = TempoVarredura, 1, -1 do
-        if not Hub.VarrerAtivo then return false end
-        StatusVarrer("VARRANDO • " .. i .. "s")
-        task.wait(1)
-    end
-    if Hub.VarrerAtivo then StatusVarrer("ESPERANDO"); task.wait(EsperaAposVarrer) end
-    return Hub.VarrerAtivo
-end
-local function ExecutarVarrer()
-    while Hub.VarrerAtivo do
-        if not AdquirirMovimento("VARRER", function() return Hub.VarrerAtivo end) then break end
-        local info, erro = EscolherLocal()
-        if not info then
-            StatusVarrer(erro)
-            LiberarMovimento("VARRER")
-            task.wait(0.25)
-        else
-            VarrerDestino.Text = "Destino: " .. info.nome
-            StatusVarrer("INDO PARA LOCAL ALEATORIO")
-            local ok = pcall(function()
-                local chegou = MoverVarrer(info.pos)
-                if Hub.VarrerAtivo then
-                    if chegou then VarrerLocal(info)
-                    else StatusVarrer("TENTANDO OUTRO LOCAL"); task.wait(0.4) end
-                end
-            end)
-            LiberarMovimento("VARRER")
-            if not ok then StatusVarrer("ERRO - REINICIANDO CICLO"); task.wait(0.5) end
-        end
-    end
-    Hub.VarrerAtivo = false
-    LiberarMovimento("VARRER")
-    StatusVarrer("DESATIVADO")
-    VarrerDestino.Text = "Destino: Nenhum"
-    setButtonActive(VarrerStart, false, "■ DESATIVAR AUTO VARRER", "▶ ATIVAR AUTO VARRER")
-end
-VarrerStart.MouseButton1Click:Connect(function()
-    Hub.VarrerAtivo = not Hub.VarrerAtivo
-    if Hub.VarrerAtivo then
-        setButtonActive(VarrerStart, true, "■ DESATIVAR AUTO VARRER", "▶ ATIVAR AUTO VARRER")
-        StatusVarrer("ATIVADO")
-        task.spawn(ExecutarVarrer)
-    else
-        StatusVarrer("PARANDO...")
-    end
-end)
-Menos.MouseButton1Click:Connect(function()
-    Hub.Velocidade = math.max(8, Hub.Velocidade - 4)
-    VelLabel.Text = "Velocidade: " .. Hub.Velocidade .. "  |  Limite: 8-100"
-end)
-Mais.MouseButton1Click:Connect(function()
-    Hub.Velocidade = math.min(100, Hub.Velocidade + 4)
-    VelLabel.Text = "Velocidade: " .. Hub.Velocidade .. "  |  Limite: 8-100"
-end)
-
--- =========================================================
 -- AUTO EMPILHADOR V9
 -- =========================================================
-local EmpBody = CriarSecao("AUTO EMPILHADOR V9", 3, 42, 185)
+local EmpBody = CriarSecao("AUTO EMPILHADOR V9", 2, 42, 185)
 local EmpStatus = makeLabel(EmpBody, "Entre na empilhadeira.", 3, 35, 11)
 local EmpInfo = makeLabel(EmpBody, "Speed: 65  |  Altura: 20  |  Espera: 1s", 39, 22, 10)
 local EmpButton = makeButton(EmpBody, "▶ ATIVAR EMPILHADOR", 12, 75, 0.96, 38, GREEN)
@@ -2304,7 +2077,7 @@ local function iniciarEmpilhador()
     task.spawn(function()
         local sucesso, mensagem = pcall(function()
             while empAtivo(token) do
-                -- Compartilha a trava com Caixa e Varrer.
+                -- Compartilha a trava com Auto Caixa.
                 if not AdquirirMovimento("EMPILHADOR", function() return empAtivo(token) end) then break end
                 if not continuaSentado(ctx) then
                     LiberarMovimento("EMPILHADOR")
@@ -2348,5 +2121,5 @@ end)
 -- Efeito visual da borda
 TweenService:Create(Stroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Transparency=0.55}):Play()
 
-atualizarEscala(100)
-print("PRIME X SCRIPT HUB carregado!")
+atualizarEscala(escalaInicial)
+print("PRIME X MOBILE carregado!")
